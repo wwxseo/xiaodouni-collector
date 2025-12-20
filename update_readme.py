@@ -44,5 +44,5 @@ def update_readme(urls):
     print("README 已成功更新！")
 
 if __name__ == "__main__":
-    image_urls = get_xiaodouni_images()
-    update_readme(image_urls)
+   imade_urls = get_xiaodouni_images()
+update_readme(image_urls)
