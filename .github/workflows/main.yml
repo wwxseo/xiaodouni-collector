@@ -2,28 +2,28 @@ name: Xiaodouni Daily Update
 
 on:
   schedule:
-    # 每天北京时间早上 10 点运行 (UTC 2:00)
+    # 每天北京时间上午 10:00 运行一次 (UTC 2:00)
     - cron: '0 2 * * *'
-  workflow_dispatch: # 允许我们手动点按钮运行
+  workflow_dispatch: # 允许手动点击按钮运行
 
 permissions:
-  contents: write # 必须开启权限，否则 Action 没法修改 README
+  contents: write # 赋予 Action 修改和提交代码的权限
 
 jobs:
   update-readme:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.9'
 
       - name: Install dependencies
         run: |
-          pip install duckduckgo_search typing_extensions
+          pip install requests beautifulsoup4
 
       - name: Run update script
         run: python update_readme.py
@@ -33,5 +33,5 @@ jobs:
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
           git add README.md
-          # 只有当 README 真的发生变化时才提交，防止报错
+          # 检查是否有变化，有变化才提交，防止报错
           git diff --quiet && git diff --staged --quiet || (git commit -m "Update Xiaodouni images" && git push)
