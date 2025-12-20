@@ -37,3 +37,4 @@
 <div align="center">
   Made with ❤️ for Xiaodouni Fans
 </div>
+> 🔗 [点击这里查看往期所有收藏 (History)](./history.md)
