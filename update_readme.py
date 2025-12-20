@@ -5,39 +5,39 @@ import random
 from bs4 import BeautifulSoup
 from datetime import datetime
 
-# 搜索关键词
-QUERIES = ["小豆泥 高清", "小豆泥 wallpaper", "小豆泥 funny bean", "小豆泥 插画"]
-# 域名黑名单：这些网站的图极其容易裂开，即便有代理也难救，直接跳过
+# 配置
+QUERIES = ["小豆泥 高清", "小豆泥 wallpaper", "小豆泥 funny bean", "小豆泥 插画", "小豆泥 萌"]
 DOMAIN_BLACKLIST = ["baidu.com", "weibo.com", "sinaimg.cn", "zhimg.com", "csdnimg.cn"]
 
 def get_seen_urls():
+    """从 history.md 中提取原始抓取过的 URL，实现永久记忆去重"""
     seen = set()
     if os.path.exists("history.md"):
         with open("history.md", "r", encoding="utf-8") as f:
-            # 提取原始链接，排除代理前缀
-            urls = re.findall(r'url=(http[^"\'&\s]+)', f.read())
+            content = f.read()
+            # 提取代理链接中的原始链接部分
+            urls = re.findall(r'url=(http[^"\'&\s]+)', content)
             for u in urls:
                 seen.add(u)
-    print(f"📜 记忆库已加载: {len(seen)} 张历史图片。")
+    print(f"📜 记忆库加载完成: 已记录 {len(seen)} 张历史图片。")
     return seen
 
 def wrap_proxy(url):
-    """使用 wsrv.nl 代理图片，绕过防盗链，强制转换格式并添加白色背景"""
-    # &bg=white: 处理透明PNG变黑的问题
-    # &we: 绕过某些防盗链错误
+    """防盗链克星：通过代理访问图片，强制白底并压缩"""
     return f"https://wsrv.nl/?url={url}&bg=white"
 
-def is_valid(url, seen_urls):
-    """检查图片链接是否有效且不在黑名单"""
+def is_valid(url, seen_urls, session_images):
+    """多重过滤：链接合法性、黑名单、历史重复、本次任务重复"""
     if not url.startswith("http"): return False
-    if url in seen_urls: return False
     if any(bad in url for bad in DOMAIN_BLACKLIST): return False
-    # 过滤掉一些明显的表情包小图链接
-    if any(x in url.lower() for x in ["/100/100", "avatar", "icon"]): return False
+    if url in seen_urls or url in session_images: return False
+    if any(x in url.lower() for x in ["/100/100", "avatar", "icon", "thumbnail"]): return False
     return True
 
-def fetch_from_bing(query, seen_urls, needed):
-    print(f"🔍 Bing 搜索: {query}...")
+# --- 三大引擎抓取函数 ---
+
+def fetch_from_bing(query, seen_urls, session_images, needed):
+    print(f"🔍 [Source: Bing] 搜索: {query}...")
     images = []
     url = f"https://www.bing.com/images/search?q={query}&qft=+filterui:imagesize-large&form=IRFLTR"
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
@@ -50,14 +50,14 @@ def fetch_from_bing(query, seen_urls, needed):
                 murl = re.search(r'"murl":"(.*?)"', m)
                 if murl:
                     link = murl.group(1)
-                    if is_valid(link, seen_urls):
+                    if is_valid(link, seen_urls, session_images + images):
                         images.append(link)
             if len(images) >= needed: break
-    except: pass
+    except Exception as e: print(f"⚠️ Bing 异常: {e}")
     return images
 
-def fetch_from_sogou(query, seen_urls, needed):
-    print(f"🔍 搜狗图片搜索: {query}...")
+def fetch_from_sogou(query, seen_urls, session_images, needed):
+    print(f"🔍 [Source: Sogou] 搜索: {query}...")
     images = []
     url = f"https://pic.sogou.com/pics?query={query}"
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
@@ -65,40 +65,65 @@ def fetch_from_sogou(query, seen_urls, needed):
         resp = requests.get(url, headers=headers, timeout=10)
         all_urls = re.findall(r'https?://[^"\'\s]+\.(?:jpg|jpeg|png)', resp.text)
         for link in all_urls:
-            if "sogou.com" not in link and is_valid(link, seen_urls):
+            if "sogou.com" not in link and is_valid(link, seen_urls, session_images + images):
                 images.append(link)
             if len(images) >= needed: break
-    except: pass
+    except Exception as e: print(f"⚠️ Sogou 异常: {e}")
     return images
+
+def fetch_from_360(query, seen_urls, session_images, needed):
+    print(f"🔍 [Source: 360] 搜索: {query}...")
+    images = []
+    url = f"https://image.so.com/i?q={query}"
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+    try:
+        resp = requests.get(url, headers=headers, timeout=10)
+        # 360的图片地址通常也在页面文本中
+        all_urls = re.findall(r'https?://[^"\'\s]+\.(?:jpg|jpeg|png)', resp.text)
+        for link in all_urls:
+            if not any(x in link for x in ["so.com", "qhimg.com"]) and is_valid(link, seen_urls, session_images + images):
+                images.append(link)
+            if len(images) >= needed: break
+    except Exception as e: print(f"⚠️ 360 异常: {e}")
+    return images
+
+# --- 主逻辑 ---
 
 def get_all_images():
     seen = get_seen_urls()
     final_images = []
-    fetchers = [fetch_from_bing, fetch_from_sogou]
+    
+    # 1. 引擎列表 & 随机排序 (源顺序随机化)
+    fetchers = [fetch_from_bing, fetch_from_sogou, fetch_from_360]
     random.shuffle(fetchers)
     
+    # 2. 依次尝试 (极高容错性)
     for fetcher in fetchers:
         needed = 12 - len(final_images)
         if needed <= 0: break
+        
+        # 随机选一个词
         query = random.choice(QUERIES)
-        new_batch = fetcher(query, seen, needed)
+        new_batch = fetcher(query, seen, final_images, needed)
         final_images.extend(new_batch)
-    
-    # 将抓到的原始链接全部包装上代理
-    proxied_images = [wrap_proxy(img) for img in final_images]
-    print(f"✅ 最终获取了 {len(proxied_images)} 张通过代理包装的新图")
-    return proxied_images
+        print(f"✅ 当前引擎贡献了 {len(new_batch)} 张图")
+
+    # 3. 统一使用代理包装 (解决裂图 & 黑块)
+    return [wrap_proxy(img) for img in final_images]
 
 def update_files(urls):
-    if not urls: return
-    # 1. 更新 README.md
+    if not urls:
+        print("⚠️ 没搜到新图，今日暂不更新。")
+        return
+
+    # 更新 README.md
     with open("README.md", "r", encoding="utf-8") as f:
         content = f.read()
     
     img_html = '<div align="center">\n'
     for url in urls:
         img_html += f'  <img src="{url}" width="180" alt="小豆泥" style="margin:5px; border-radius:12px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">'
-    img_html += '\n  <p><i>🔄 智能代理加速中，让可爱永不掉线</i></p>\n</div>'
+    img_html += '\n  <p><i>🔄 三源联搜 & 智能代理加速，每日发现新惊喜</i></p>\n</div>'
 
     pattern = r"<!-- START_SECTION:xiaodouni -->.*?<!-- END_SECTION:xiaodouni -->"
     replacement = f"<!-- START_SECTION:xiaodouni -->\n{img_html}\n<!-- END_SECTION:xiaodouni -->"
@@ -107,7 +132,7 @@ def update_files(urls):
     with open("README.md", "w", encoding="utf-8") as f:
         f.write(new_readme)
 
-    # 2. 更新 history.md
+    # 更新 history.md
     today = datetime.now().strftime("%Y-%m-%d")
     if not os.path.exists("history.md"):
         with open("history.md", "w", encoding="utf-8") as f:
@@ -118,6 +143,7 @@ def update_files(urls):
         for url in urls:
             f.write(f'  <img src="{url}" width="120" style="margin:2px; border-radius:5px;">\n')
         f.write("</div>\n\n---\n")
+    print(f"✨ 任务完成：更新了 README 并归档了 {len(urls)} 张新图。")
 
 if __name__ == "__main__":
     imgs = get_all_images()
