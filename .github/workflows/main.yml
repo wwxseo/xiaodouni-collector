@@ -23,7 +23,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install duckduckgo_search
+          pip install duckduckgo_search typing_extensions
 
       - name: Run update script
         run: python update_readme.py
