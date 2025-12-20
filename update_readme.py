@@ -2,9 +2,10 @@ import os
 import re
 import requests
 from bs4 import BeautifulSoup
+from datetime import datetime
 
 def get_xiaodouni_images():
-    print("🚀 开始搜寻小豆泥...")
+    print("🚀 开始搜寻高清小豆泥...")
     search_urls = [
         "https://www.bing.com/images/search?q=小豆泥+wallpaper&qft=+filterui:imagesize-large&form=IRFLTR",
         "https://www.bing.com/images/search?q=小豆泥"
@@ -32,9 +33,9 @@ def get_xiaodouni_images():
     return images
 
 def update_readme(urls):
-    if not urls:
-        print("⚠️ 未找到图片，跳过。")
-        return
+    """更新首页 README.md"""
+    if not urls: return
+    if not os.path.exists("README.md"): return
     
     with open("README.md", "r", encoding="utf-8") as f:
         content = f.read()
@@ -44,23 +45,42 @@ def update_readme(urls):
         img_html += f'  <img src="{url}" width="180" alt="小豆泥" style="margin:5px; border-radius:12px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">'
     img_html += '\n  <p><i>🔄 每日自动更新，搜集自全网高清图源</i></p>\n</div>'
     
-    # 更加宽松的正则匹配，允许标记内部有空格
     start_tag = "<!-- START_SECTION:xiaodouni -->"
     end_tag = "<!-- END_SECTION:xiaodouni -->"
     
     if start_tag in content and end_tag in content:
-        print("✅ 找到标记，正在替换内容...")
         pattern = r"<!-- START_SECTION:xiaodouni -->.*?<!-- END_SECTION:xiaodouni -->"
         replacement = f"{start_tag}\n{img_html}\n{end_tag}"
         new_content = re.sub(pattern, replacement, content, flags=re.DOTALL)
     else:
-        print("⚠️ 未找到标准标记，将在文件末尾追加内容...")
         new_content = content + f"\n\n{start_tag}\n{img_html}\n{end_tag}"
 
     with open("README.md", "w", encoding="utf-8") as f:
         f.write(new_content)
     print("✨ README 已更新！")
 
+def update_history(urls):
+    """追加到 history.md"""
+    if not urls: return
+    
+    # 获取当前日期 (例如: 2025-05-20)
+    today = datetime.now().strftime("%Y-%m-%d")
+    
+    # 如果文件不存在，先写个标题
+    if not os.path.exists("history.md"):
+        with open("history.md", "w", encoding="utf-8") as f:
+            f.write("# 📚 小豆泥历史收藏馆\n\n这里记录了自本项目启动以来抓取过的所有图片。\n\n---\n")
+
+    # 追加新抓到的图片（使用小缩略图，防止页面太长）
+    with open("history.md", "a", encoding="utf-8") as f:
+        f.write(f"\n### 📅 {today}\n")
+        f.write('<div align="left">\n')
+        for url in urls:
+            f.write(f'  <img src="{url}" width="120" style="margin:2px; border-radius:5px;">\n')
+        f.write('</div>\n\n---\n')
+    print(f"📖 已成功归档 {len(urls)} 张图片到 history.md")
+
 if __name__ == "__main__":
     image_list = get_xiaodouni_images()
     update_readme(image_list)
+    update_history(image_list)
