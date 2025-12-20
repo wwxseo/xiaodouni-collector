@@ -11,11 +11,10 @@
 ## 📸 今日份高清小豆泥
 
 <!-- START_SECTION:xiaodouni -->
-<!-- 自动更新区域开始 -->
 <div align="center">
   <p>🚀 正在扫描全网高清资源，请稍候...</p>
 </div>
-<!-- 自动更新区域结束 -->
+<!-- END_SECTION:xiaodouni -->
 
 ---
 
