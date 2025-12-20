@@ -2,12 +2,12 @@ name: Xiaodouni Daily Update
 
 on:
   schedule:
-    # 每天北京时间上午 10:00 运行一次 (UTC 2:00)
+    # 每天北京时间上午 10:00 运行
     - cron: '0 2 * * *'
-  workflow_dispatch: # 允许手动点击按钮运行
+  workflow_dispatch:
 
 permissions:
-  contents: write # 赋予 Action 修改和提交代码的权限
+  contents: write
 
 jobs:
   update-readme:
@@ -22,8 +22,7 @@ jobs:
           python-version: '3.9'
 
       - name: Install dependencies
-        run: |
-          pip install requests beautifulsoup4
+        run: pip install requests beautifulsoup4
 
       - name: Run update script
         run: python update_readme.py
@@ -32,6 +31,6 @@ jobs:
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git add README.md
-          # 检查是否有变化，有变化才提交，防止报错
-          git diff --quiet && git diff --staged --quiet || (git commit -m "Update Xiaodouni images" && git push)
+          # 使用 git add . 这样 history.md 如果是新建的也能被抓到
+          git add .
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Update Xiaodouni images and history" && git push)
