@@ -1,6 +1,5 @@
 # 🐱 小豆泥自动收集器 (Xiaodouni HD Collector)
 
-![Update Xiaodouni](https://github.com/你的用户名/xiaodouni-collector/actions/workflows/main.yml/badge.svg)
 ![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)
 ![License](https://img.shields.io/badge/License-MIT-green.svg)
 ![Quality](https://img.shields.io/badge/Quality-HD_Only-orange.svg)
