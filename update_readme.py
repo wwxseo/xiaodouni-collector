@@ -5,99 +5,88 @@ import random
 from bs4 import BeautifulSoup
 from datetime import datetime
 
-# 精准关键词，避开实物豆子
-QUERIES = ["小豆泥 漫画", "小豆泥 表情包", "小豆泥 funny bean cat", "小豆泥 动画", "小豆泥 动态图"]
-DOMAIN_BLACKLIST = ["baidu.com", "weibo.com", "sinaimg.cn", "zhimg.com", "csdnimg.cn", "funnybean.com"]
+# 更加精准的搜索词，增加 cat 关键词防止搜到豆子
+QUERIES = ["小豆泥 cat", "小豆泥 漫画", "funny bean cat", "小豆泥 表情包", "小豆泥 wallpaper"]
+# 域名黑名单：排除搜索引擎自家的 Logo 和已知的坏源
+BLACKLIST = ["bing.com/th", "bing.com/sa", "sogou.com", "so.com", "baidu.com", "weibo.com", "sinaimg.cn"]
 
 def get_seen_urls():
     seen = set()
     if os.path.exists("history.md"):
         with open("history.md", "r", encoding="utf-8") as f:
+            # 提取所有 http 链接，忽略代理前缀
             urls = re.findall(r'url=(http[^"\'&\s]+)', f.read())
             for u in urls:
                 seen.add(u)
     return seen
 
 def wrap_proxy(url):
-    """使用代理并强制缩放裁剪成正方形，让排版极度整齐"""
-    # w=200&h=200&fit=cover: 强制裁剪成 200x200 的正方形
-    return f"https://wsrv.nl/?url={url}&w=200&h=200&fit=cover&bg=white"
-
-def is_valid_image(url, seen_urls, session_images):
-    """验证图片是否真的存在，且不是坏图"""
-    if not url.startswith("http"): return False
-    if any(bad in url for bad in DOMAIN_BLACKLIST): return False
-    if url in seen_urls or url in session_images: return False
-    
-    try:
-        # 发送一个 HEAD 请求，只检查链接是否有效，不下载图片，速度极快
-        res = requests.head(url, timeout=3, allow_redirects=True)
-        if res.status_code == 200 and int(res.headers.get('Content-Length', 0)) > 5000:
-            return True
-    except:
-        return False
-    return False
+    """防盗链+裁剪+强制白底"""
+    return f"https://wsrv.nl/?url={url}&w=300&h=300&fit=cover&bg=white"
 
 def fetch_images(query, seen_urls, session_images, needed):
-    print(f"🔍 正在从多源搜寻 '{query}'...")
-    images = []
-    # 轮流尝试 Bing 和 360
-    urls = [
-        f"https://www.bing.com/images/search?q={query}&form=HDRSC3",
-        f"https://image.so.com/i?q={query}"
-    ]
+    print(f"🔍 正在搜寻: {query}...")
+    found = []
+    # 使用 Bing 搜索
+    url = f"https://www.bing.com/images/search?q={query}&safeSearch=Moderate"
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
     
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-    
-    for url in urls:
-        try:
-            resp = requests.get(url, headers=headers, timeout=10)
-            # 兼容 Bing 的匹配
-            murls = re.findall(r'"murl":"(.*?)"', resp.text)
-            # 兼容 360/搜狗 的匹配
-            others = re.findall(r'https?://[^"\'\s]+\.(?:jpg|jpeg|png)', resp.text)
+    try:
+        resp = requests.get(url, headers=headers, timeout=10)
+        # 用正则抓取 murl (原始图片地址)
+        links = re.findall(r'"murl":"(.*?)"', resp.text)
+        
+        for link in links:
+            # 过滤黑名单、重复项、以及 Bing 自己的 UI 图标
+            if not link.startswith("http"): continue
+            if any(b in link for b in BLACKLIST): continue
+            if link in seen_urls or link in session_images or link in found: continue
             
-            for link in (murls + others):
-                if is_valid_image(link, seen_urls, session_images + images):
-                    images.append(link)
-                    print(f"✅ 找到一张有效新图: {link[:50]}...")
-                if len(images) >= needed: return images
-        except: continue
-    return images
+            found.append(link)
+            if len(found) >= needed: break
+    except Exception as e:
+        print(f"⚠️ 抓取出错: {e}")
+        
+    return found
 
 def get_all_images():
     seen = get_seen_urls()
     final_images = []
     
-    # 尝试多次，直到凑满 12 张
-    attempts = 0
-    while len(final_images) < 12 and attempts < 5:
-        query = random.choice(QUERIES)
-        needed = 12 - len(final_images)
-        batch = fetch_images(query, seen, final_images, needed)
-        final_images.extend(batch)
-        attempts += 1
+    # 随机打乱关键词，增加新鲜度
+    random.shuffle(QUERIES)
     
+    for q in QUERIES:
+        needed = 12 - len(final_images)
+        if needed <= 0: break
+        
+        batch = fetch_images(q, seen, final_images, needed)
+        final_images.extend(batch)
+    
+    print(f"🎯 本次任务共抓取到 {len(final_images)} 张新图")
     return [wrap_proxy(img) for img in final_images]
 
 def update_files(urls):
-    if not urls: return
+    if not urls: 
+        print("❌ 没搜到图，不更新。")
+        return
+        
     with open("README.md", "r", encoding="utf-8") as f:
         content = f.read()
     
-    # 强制正方形网格排版
+    # 构建 3x4 或 4x3 的精美网格
     img_html = '<div align="center">\n'
     for url in urls:
-        # 移除了换行，增加等高宽控制
-        img_html += f'  <img src="{url}" width="160" height="160" alt="小豆泥" style="margin:2px; border-radius:8px; object-fit:cover;">'
-    img_html += '\n  <p><i>🔄 智能过滤 & 自动裁剪，每日发现高清小豆泥</i></p>\n</div>'
+        img_html += f'  <img src="{url}" width="160" height="160" alt="小豆泥" style="margin:4px; border-radius:12px; object-fit:cover; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">'
+    img_html += '\n  <p><i>🐱 每日自动搜集高清小豆泥，排版已优化</i></p>\n</div>'
 
     pattern = r"<!-- START_SECTION:xiaodouni -->.*?<!-- END_SECTION:xiaodouni -->"
     replacement = f"<!-- START_SECTION:xiaodouni -->\n{img_html}\n<!-- END_SECTION:xiaodouni -->"
-    new_readme = re.sub(pattern, replacement, content, flags=re.DOTALL)
     
-    with open("README.md", "w", encoding="utf-8") as f:
-        f.write(new_readme)
+    if "<!-- START_SECTION:xiaodouni -->" in content:
+        new_readme = re.sub(pattern, replacement, content, flags=re.DOTALL)
+        with open("README.md", "w", encoding="utf-8") as f:
+            f.write(new_readme)
 
     # 更新 history.md
     today = datetime.now().strftime("%Y-%m-%d")
@@ -108,7 +97,7 @@ def update_files(urls):
     with open("history.md", "a", encoding="utf-8") as f:
         f.write(f"\n### 📅 {today}\n<div align='left'>\n")
         for url in urls:
-            f.write(f'  <img src="{url}" width="100" height="100" style="margin:2px; border-radius:5px; object-fit:cover;">\n')
+            f.write(f'  <img src="{url}" width="100" height="100" style="margin:2px; border-radius:6px; object-fit:cover;">\n')
         f.write("</div>\n\n---\n")
 
 if __name__ == "__main__":
